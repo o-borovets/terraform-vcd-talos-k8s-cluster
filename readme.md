@@ -10,7 +10,7 @@ This Terraform module provisions a Talos-based Kubernetes cluster on a VMware Cl
 
 ```hcl
 module "zeta-vcd-cluster" {
-  source = "../../../../terraform/modules/vdc-talos"
+  source = "github.com/o-borovets/vcd-talos-k8s-cluster"
 
   cluster_name   = "zeta"
   cluster_access = "private"
