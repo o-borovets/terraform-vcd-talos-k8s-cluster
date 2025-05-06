@@ -34,6 +34,7 @@ module "zeta-vcd-cluster" {
     { name = "worker", type = "<sizing_policy_name>", count = 1 }
   ]
 }
+```
 > **Note**: Replace placeholder values (<...>) with actual VCD configuration values.
 
 ## Roadmap
