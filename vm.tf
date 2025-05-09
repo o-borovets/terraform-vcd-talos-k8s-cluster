@@ -122,6 +122,12 @@ resource "vcd_vapp_vm" "control_plane" {
       }
     }))
   }
+  
+  lifecycle {
+    ignore_changes = [
+      vapp_template_id
+    ]
+  }
 }
 
 ###############
@@ -216,5 +222,11 @@ resource "vcd_vapp_vm" "worker" {
         }
       }
     }))
+  }
+
+  lifecycle {
+    ignore_changes = [
+      vapp_template_id
+    ]
   }
 }
