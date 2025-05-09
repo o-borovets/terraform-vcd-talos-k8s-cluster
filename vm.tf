@@ -74,6 +74,9 @@ resource "vcd_vapp_vm" "control_plane" {
           )
           ip_allocation_mode = "MANUAL"
         }
+
+        firmware        = local.control_plane_nodepools[np_index].firmware,
+        efi_secure_boot = local.control_plane_nodepools[np_index].secure_boot,
       }
     }
   ]...)
@@ -122,7 +125,11 @@ resource "vcd_vapp_vm" "control_plane" {
       }
     }))
   }
-  
+  firmware = each.value.firmware
+  boot_options {
+    efi_secure_boot = each.value.efi_secure_boot
+  }
+
   lifecycle {
     ignore_changes = [
       vapp_template_id
@@ -168,15 +175,20 @@ resource "vcd_vapp_vm" "worker" {
     for np_index in range(length(local.worker_nodepools)) : {
       for wkr_index in range(local.worker_nodepools[np_index].count) : "${var.cluster_name}-${local.worker_nodepools[np_index].name}-${wkr_index + 1}" => {
         sizing_policy_id = data.vcd_vm_sizing_policy.lookup[local.worker_nodepools[np_index].server_type].id,
+
         labels = merge(
           local.worker_nodepools[np_index].labels,
           { cluster : var.cluster_name },
           { role : "worker" }
         ),
+
         ipv4_private = cidrhost(
           tolist(vcd_nsxt_ip_set.worker[local.worker_nodepools[np_index].name].ip_addresses)[0],
           wkr_index + 1
-        )
+        ),
+
+        firmware        = local.worker_nodepools[np_index].firmware,
+        efi_secure_boot = local.worker_nodepools[np_index].secure_boot,
       }
     }
   ]...)
@@ -222,6 +234,11 @@ resource "vcd_vapp_vm" "worker" {
         }
       }
     }))
+  }
+
+  firmware = each.value.firmware
+  boot_options {
+    efi_secure_boot = each.value.efi_secure_boot
   }
 
   lifecycle {

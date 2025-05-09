@@ -3,6 +3,8 @@ locals {
     for np in var.control_plane_nodepools : {
       name        = np.name,
       server_type = np.type,
+      firmware    = np.firmware,
+      secure_boot = np.secure_boot,
       labels = merge(
         np.labels,
         { nodepool = np.name }
@@ -25,6 +27,8 @@ locals {
     for np in var.worker_nodepools : {
       name        = np.name,
       server_type = np.type,
+      firmware    = np.firmware,
+      secure_boot = np.secure_boot,
       labels = merge(
         np.labels,
         { nodepool = np.name }

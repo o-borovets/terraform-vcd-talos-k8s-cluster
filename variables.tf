@@ -193,12 +193,22 @@ variable "control_plane_nodepools" {
     annotations = optional(map(string), {})
     taints      = optional(list(string), [])
     count       = optional(number, 1)
+
+    firmware     = optional(string, "bios")
+    secure_boot  = optional(bool, false)
   }))
   description = "Configures the number and attributes of Control Plane nodes."
 
   validation {
     condition     = length(var.control_plane_nodepools) == length(distinct([for np in var.control_plane_nodepools : np.name]))
     error_message = "Control Plane nodepool names must be unique to avoid configuration conflicts."
+  }
+
+  validation {
+    condition     = alltrue([
+      for np in var.control_plane_nodepools : np.secure_boot == false || np.firmware == "efi"
+    ])
+    error_message = "secure_boot can be true only if firmware is 'efi'."
   }
 
   validation {
@@ -218,6 +228,14 @@ variable "control_plane_nodepools" {
     error_message = "The combined length of the cluster name and any Control Plane nodepool name must not exceed 56 characters."
   }
 
+  validation {
+    condition = alltrue([
+      for np in var.control_plane_nodepools : contains([
+        "bios", "efi",
+      ], np.firmware)
+    ])
+    error_message = "Each worker nodepool firmware must be one of: 'bios' or 'efi'"
+  }
 }
 
 variable "control_plane_config_patches" {
@@ -236,6 +254,8 @@ variable "worker_nodepools" {
     annotations = optional(map(string), {})
     taints      = optional(list(string), [])
     count       = optional(number, 1)
+    firmware    = optional(string, "bios")
+    secure_boot = optional(bool, false)
   }))
   default     = []
   description = "Defines configuration settings for Worker node pools within the cluster."
@@ -243,6 +263,13 @@ variable "worker_nodepools" {
   validation {
     condition     = length(var.worker_nodepools) == length(distinct([for np in var.worker_nodepools : np.name]))
     error_message = "Worker nodepool names must be unique to avoid configuration conflicts."
+  }
+
+  validation {
+    condition     = alltrue([
+      for np in var.worker_nodepools : np.secure_boot == false || np.firmware == "efi"
+    ])
+    error_message = "secure_boot can be true only if firmware is 'efi'."
   }
 
   validation {
@@ -258,6 +285,15 @@ variable "worker_nodepools" {
       for np in var.worker_nodepools : length(var.cluster_name) + length(np.name) <= 56
     ])
     error_message = "The combined length of the cluster name and any Worker nodepool name must not exceed 56 characters."
+  }
+
+  validation {
+    condition = alltrue([
+      for np in var.worker_nodepools : contains([
+        "bios", "efi",
+      ], np.firmware)
+    ])
+    error_message = "Each worker nodepool firmware must be one of: 'bios' or 'efi'"
   }
 }
 
