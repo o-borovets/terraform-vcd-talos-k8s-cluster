@@ -9,7 +9,7 @@ This Terraform module provisions a Talos-based Kubernetes cluster on a VMware Cl
 ## Usage
 
 ```hcl
-module "zeta-vcd-cluster" {
+module "vcd-cluster" {
   source = "github.com/o-borovets/vcd-talos-k8s-cluster"
 
   cluster_name   = "zeta"
@@ -37,10 +37,37 @@ module "zeta-vcd-cluster" {
 ```
 > **Note**: Replace placeholder values (<...>) with actual VCD configuration values.
 
+<!-- Advanced Configuration -->
+## :hammer_and_pick: Advanced Configuration
+
+<!-- Cluster Access -->
+<details>
+<summary><b>Using with VCD CSI</b></summary>
+
+When using the [cloud-director-named-disk-csi-driver](https://github.com/vmware/cloud-director-named-disk-csi-driver) it’s **mandatory** to set the `disk.enableUUID` virtual machine configuration option to enable disk detection by a node CSI driver.
+
+#### Example
+
+```hcl
+module "vcd-cluster" {
+  worker_nodepools = [
+    {
+      extra_parameters = [
+        { key = "disk.enableUUID", value = "1" }
+      ]
+    }
+  ]
+}
+```
+
+</details>
+
+
 ## Roadmap
 - [] Setup Renovate for dependency updates
 - [] Support cluster creation without an existing edge gateway
 - [] Implement firewall configuration
+- [] Allow choice VM parameters without sizing policy
 - [] Improve subnet management
 - [] Add support for public networking
 - [] Enable IPv6 support

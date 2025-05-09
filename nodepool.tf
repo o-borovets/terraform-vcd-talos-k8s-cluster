@@ -19,7 +19,8 @@ locals {
           { key = "node-role.kubernetes.io/control-plane", value = "", effect = "NoSchedule" }
         ]
       ),
-      count = np.count,
+      count            = np.count,
+      extra_parameters = np.extra_parameters
     }
   ]
 
@@ -38,7 +39,8 @@ locals {
         "^(?P<key>[^=:]+)=?(?P<value>[^=:]*?):(?P<effect>.+)$",
         taint
       )],
-      count           = np.count,
+      count            = np.count,
+      extra_parameters = np.extra_parameters
     }
   ]
 

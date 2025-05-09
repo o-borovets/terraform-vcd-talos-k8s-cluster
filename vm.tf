@@ -77,6 +77,8 @@ resource "vcd_vapp_vm" "control_plane" {
 
         firmware        = local.control_plane_nodepools[np_index].firmware,
         efi_secure_boot = local.control_plane_nodepools[np_index].secure_boot,
+
+        extra_parameters = local.worker_nodepools[np_index].extra_parameters,
       }
     }
   ]...)
@@ -89,17 +91,6 @@ resource "vcd_vapp_vm" "control_plane" {
   sizing_policy_id = each.value.sizing_policy_id
 
   # os_type = "other6xLinux64Guest"
-
-  dynamic "metadata_entry" {
-    for_each = each.value.labels
-    content {
-      key         = metadata_entry.key
-      value       = metadata_entry.value
-      type        = "MetadataStringValue"
-      user_access = "READWRITE"
-      is_system   = false
-    }
-  }
 
   network {
     type               = each.value.network.type
@@ -126,13 +117,34 @@ resource "vcd_vapp_vm" "control_plane" {
     }))
   }
   firmware = each.value.firmware
+
   boot_options {
     efi_secure_boot = each.value.efi_secure_boot
   }
 
+  dynamic "set_extra_config" {
+    for_each = each.value.extra_parameters
+    content {
+      key   = set_extra_config.key
+      value = set_extra_config.value
+    }
+  }
+
+  dynamic "metadata_entry" {
+    for_each = each.value.labels
+    content {
+      key         = metadata_entry.key
+      value       = metadata_entry.value
+      type        = "MetadataStringValue"
+      user_access = "READWRITE"
+      is_system   = false
+    }
+  }
+
   lifecycle {
     ignore_changes = [
-      vapp_template_id
+      vapp_template_id,
+      disk, # can cause conflicts with CSI. TODO: Find a workaround to keep attached disks that are not managed by terraform
     ]
   }
 }
@@ -189,6 +201,8 @@ resource "vcd_vapp_vm" "worker" {
 
         firmware        = local.worker_nodepools[np_index].firmware,
         efi_secure_boot = local.worker_nodepools[np_index].secure_boot,
+
+        extra_parameters = local.worker_nodepools[np_index].extra_parameters,
       }
     }
   ]...)
@@ -199,17 +213,6 @@ resource "vcd_vapp_vm" "worker" {
   computer_name = each.key
 
   sizing_policy_id = each.value.sizing_policy_id
-
-  dynamic "metadata_entry" {
-    for_each = each.value.labels
-    content {
-      key         = metadata_entry.key
-      value       = metadata_entry.value
-      type        = "MetadataStringValue"
-      user_access = "READWRITE"
-      is_system   = false
-    }
-  }
 
   network {
     type               = "org"
@@ -237,13 +240,34 @@ resource "vcd_vapp_vm" "worker" {
   }
 
   firmware = each.value.firmware
+
   boot_options {
     efi_secure_boot = each.value.efi_secure_boot
   }
 
+  dynamic "set_extra_config" {
+    for_each = each.value.extra_parameters
+    content {
+      key   = set_extra_config.key
+      value = set_extra_config.value
+    }
+  }
+
+  dynamic "metadata_entry" {
+    for_each = each.value.labels
+    content {
+      key         = metadata_entry.key
+      value       = metadata_entry.value
+      type        = "MetadataStringValue"
+      user_access = "READWRITE"
+      is_system   = false
+    }
+  }
+
   lifecycle {
     ignore_changes = [
-      vapp_template_id
+      vapp_template_id,
+      disk, # can cause conflicts with CSI. TODO: Find a workaround to keep attached disks that are not managed by terraform
     ]
   }
 }

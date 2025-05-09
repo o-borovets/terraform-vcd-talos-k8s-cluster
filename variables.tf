@@ -194,8 +194,10 @@ variable "control_plane_nodepools" {
     taints      = optional(list(string), [])
     count       = optional(number, 1)
 
-    firmware     = optional(string, "bios")
-    secure_boot  = optional(bool, false)
+    firmware    = optional(string, "bios")
+    secure_boot = optional(bool, false)
+
+    extra_parameters = optional(map(string), {})
   }))
   description = "Configures the number and attributes of Control Plane nodes."
 
@@ -205,7 +207,7 @@ variable "control_plane_nodepools" {
   }
 
   validation {
-    condition     = alltrue([
+    condition = alltrue([
       for np in var.control_plane_nodepools : np.secure_boot == false || np.firmware == "efi"
     ])
     error_message = "secure_boot can be true only if firmware is 'efi'."
@@ -256,6 +258,8 @@ variable "worker_nodepools" {
     count       = optional(number, 1)
     firmware    = optional(string, "bios")
     secure_boot = optional(bool, false)
+
+    extra_parameters = optional(map(string), {})
   }))
   default     = []
   description = "Defines configuration settings for Worker node pools within the cluster."
@@ -266,7 +270,7 @@ variable "worker_nodepools" {
   }
 
   validation {
-    condition     = alltrue([
+    condition = alltrue([
       for np in var.worker_nodepools : np.secure_boot == false || np.firmware == "efi"
     ])
     error_message = "secure_boot can be true only if firmware is 'efi'."
@@ -545,8 +549,8 @@ variable "hcloud_network" {
 variable "vcd_network" {
   type = object({
     edge_gateway = object({
-      id                  = optional(string)
-      name                = optional(string)
+      id                       = optional(string)
+      name                     = optional(string)
       server_engine_group_name = optional(string)
     })
   })
