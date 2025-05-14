@@ -212,7 +212,7 @@ resource "vcd_vapp_vm" "worker" {
         firmware         = local.worker_nodepools[np_index].firmware,
         efi_secure_boot  = local.worker_nodepools[np_index].secure_boot,
         extra_parameters = local.worker_nodepools[np_index].extra_parameters,
-        internal_disks   = local.control_plane_nodepools[np_index].internal_disks,
+        internal_disks   = local.worker_nodepools[np_index].internal_disks,
       }
     }
   ]...)
@@ -275,7 +275,7 @@ resource "vcd_vapp_vm" "worker" {
   }
 
   dynamic "override_template_disk" {
-    for_each = length(each.value.internal_disks) > 1 ? [each.value.internal_disks[1]] : []
+    for_each = length(each.value.internal_disks) > 0 ? [each.value.internal_disks[0]] : []
     content {
       bus_number  = 0
       unit_number = override_template_disk.key
