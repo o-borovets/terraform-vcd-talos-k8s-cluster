@@ -78,7 +78,7 @@ resource "vcd_vapp_vm" "control_plane" {
         firmware        = local.control_plane_nodepools[np_index].firmware,
         efi_secure_boot = local.control_plane_nodepools[np_index].secure_boot,
 
-        extra_parameters = local.worker_nodepools[np_index].extra_parameters,
+        extra_parameters = local.control_plane_nodepools[np_index].extra_parameters,
       }
     }
   ]...)
