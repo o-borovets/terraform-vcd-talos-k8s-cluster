@@ -26,35 +26,6 @@ data "vcd_vm_sizing_policy" "lookup" {
   name = each.key
 }
 
-data "talos_machine_configuration" "vm_cp_init_config" {
-  machine_type    = "controlplane"
-  machine_secrets = talos_machine_secrets.this.machine_secrets
-
-  talos_version      = var.talos_version
-  cluster_name       = var.cluster_name
-  cluster_endpoint   = "https://${local.control_plane_private_vip_ipv4}:${local.kube_api_port}"
-  kubernetes_version = var.kubernetes_version
-
-  config_patches = [
-    <<YAML
-    machine:
-      network:
-          hostname: $${hostname}
-          interfaces:
-              - interface: eth0 # The interface name.
-                # Assigns static IP addresses to the interface.
-                addresses:
-                  - $${private_ip}
-                # A list of routes associated with the interface.
-                routes:
-                  - network: 0.0.0.0/0 # The route's network (destination).
-                    gateway: $${gateway}
-    YAML
-  ]
-  docs     = false
-  examples = false
-}
-
 resource "vcd_vapp_vm" "control_plane" {
   vapp_name = vcd_vapp.this.name
 
@@ -150,35 +121,6 @@ resource "vcd_vapp_vm" "control_plane" {
 }
 
 ###############
-
-data "talos_machine_configuration" "vm_worker_init_config" {
-  machine_type    = "worker"
-  machine_secrets = talos_machine_secrets.this.machine_secrets
-
-  talos_version      = var.talos_version
-  cluster_name       = var.cluster_name
-  cluster_endpoint   = "https://${local.control_plane_private_vip_ipv4}:${local.kube_api_port}"
-  kubernetes_version = var.kubernetes_version
-
-  config_patches = [
-    <<YAML
-    machine:
-      network:
-          hostname: $${hostname}
-          interfaces:
-              - interface: eth0 # The interface name.
-                # Assigns static IP addresses to the interface.
-                addresses:
-                  - $${private_ip}
-                # A list of routes associated with the interface.
-                routes:
-                  - network: 0.0.0.0/0 # The route's network (destination).
-                    gateway: $${gateway}
-    YAML
-  ]
-  docs     = false
-  examples = false
-}
 
 resource "vcd_vapp_vm" "worker" {
   vapp_name = vcd_vapp.this.name
