@@ -75,10 +75,10 @@ resource "vcd_vapp_vm" "control_plane" {
           ip_allocation_mode = "MANUAL"
         }
 
-        firmware        = local.control_plane_nodepools[np_index].firmware,
-        efi_secure_boot = local.control_plane_nodepools[np_index].secure_boot,
-
+        firmware         = local.control_plane_nodepools[np_index].firmware,
+        efi_secure_boot  = local.control_plane_nodepools[np_index].secure_boot,
         extra_parameters = local.control_plane_nodepools[np_index].extra_parameters,
+        internal_disks   = local.control_plane_nodepools[np_index].internal_disks,
       }
     }
   ]...)
@@ -141,6 +141,16 @@ resource "vcd_vapp_vm" "control_plane" {
     }
   }
 
+  dynamic "override_template_disk" {
+    for_each = length(each.value.internal_disks) > 1 ? [each.value.internal_disks[1]] : []
+    content {
+      bus_number  = 0
+      unit_number = override_template_disk.key
+      bus_type    = override_template_disk.value.type
+      size_in_mb  = override_template_disk.value.size_in_mb
+    }
+  }
+
   lifecycle {
     ignore_changes = [
       vapp_template_id,
@@ -199,10 +209,10 @@ resource "vcd_vapp_vm" "worker" {
           wkr_index + 1
         ),
 
-        firmware        = local.worker_nodepools[np_index].firmware,
-        efi_secure_boot = local.worker_nodepools[np_index].secure_boot,
-
+        firmware         = local.worker_nodepools[np_index].firmware,
+        efi_secure_boot  = local.worker_nodepools[np_index].secure_boot,
         extra_parameters = local.worker_nodepools[np_index].extra_parameters,
+        internal_disks   = local.control_plane_nodepools[np_index].internal_disks,
       }
     }
   ]...)
@@ -261,6 +271,16 @@ resource "vcd_vapp_vm" "worker" {
       type        = "MetadataStringValue"
       user_access = "READWRITE"
       is_system   = false
+    }
+  }
+
+  dynamic "override_template_disk" {
+    for_each = length(each.value.internal_disks) > 1 ? [each.value.internal_disks[1]] : []
+    content {
+      bus_number  = 0
+      unit_number = override_template_disk.key
+      bus_type    = override_template_disk.value.type
+      size_in_mb  = override_template_disk.value.size_in_mb
     }
   }
 
