@@ -21,6 +21,7 @@ locals {
       ),
       count            = np.count,
       extra_parameters = np.extra_parameters
+      internal_disks   = np.internal_disks
     }
   ]
 
@@ -41,12 +42,12 @@ locals {
       )],
       count            = np.count,
       extra_parameters = np.extra_parameters
+      internal_disks   = np.internal_disks
     }
   ]
 
-
-  control_plane_nodepools_map      = { for np in local.control_plane_nodepools : np.name => np }
-  worker_nodepools_map             = { for np in local.worker_nodepools : np.name => np }
+  control_plane_nodepools_map = { for np in local.control_plane_nodepools : np.name => np }
+  worker_nodepools_map        = { for np in local.worker_nodepools : np.name => np }
 
   control_plane_sum = sum(concat(
     [for np in local.control_plane_nodepools : np.count], [0]

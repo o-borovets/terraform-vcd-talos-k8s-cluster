@@ -198,6 +198,11 @@ variable "control_plane_nodepools" {
     secure_boot = optional(bool, false)
 
     extra_parameters = optional(map(string), {})
+
+    internal_disks = optional(list(object({
+      type       = string
+      size_in_mb = number
+    })), [])
   }))
   description = "Configures the number and attributes of Control Plane nodes."
 
@@ -260,6 +265,11 @@ variable "worker_nodepools" {
     secure_boot = optional(bool, false)
 
     extra_parameters = optional(map(string), {})
+
+    internal_disks = optional(list(object({
+      type       = string
+      size_in_mb = number
+    })), [])
   }))
   default     = []
   description = "Defines configuration settings for Worker node pools within the cluster."
