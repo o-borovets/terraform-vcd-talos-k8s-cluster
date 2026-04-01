@@ -1,5 +1,5 @@
 locals {
-  talos_schematic_id = coalesce(var.talos_schematic_id, talos_image_factory_schematic.this[0].id)
+  talos_schematic_id = var.talos_schematic_id != null ? var.talos_schematic_id : talos_image_factory_schematic.this[0].id
 
   talos_catalog_id = "talos-${var.talos_version}"
 

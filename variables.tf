@@ -61,6 +61,30 @@ variable "cluster_delete_protection" {
   description = "Adds delete protection for resources that support it."
 }
 
+# Client Tools
+variable "client_prerequisites_check_enabled" {
+  type        = bool
+  default     = true
+  description = "Controls whether a preflight check verifies that required client tools are installed before provisioning."
+}
+
+variable "talosctl_version_check_enabled" {
+  type        = bool
+  default     = true
+  description = "Controls whether a preflight check verifies the local talosctl client version before provisioning."
+}
+
+variable "talosctl_retries" {
+  type        = number
+  default     = 10
+  description = "Specifies how many times talosctl operations should retry before failing. This setting helps improve resilience against transient network issues or temporary API unavailability."
+
+  validation {
+    condition     = var.talosctl_retries >= 0
+    error_message = "The talosctl retries value must be at least 0."
+  }
+}
+
 
 
 
@@ -321,7 +345,7 @@ variable "worker_config_patches" {
 # Talos
 variable "talos_version" {
   type        = string
-  default     = "v1.8.4"
+  default     = "v1.12.6"
   description = "Specifies the version of Talos to be used in generated machine configurations."
 }
 
@@ -335,6 +359,53 @@ variable "talos_image_extensions" {
   type        = list(string)
   default     = []
   description = "Specifies Talos image extensions for additional functionality on top of the default Talos Linux capabilities. See: https://github.com/siderolabs/extensions"
+}
+
+variable "talos_upgrade_debug" {
+  type        = bool
+  default     = false
+  description = "Enable debug operation from kernel logs during Talos upgrades. When true, --wait is set to true by talosctl."
+}
+
+variable "talos_upgrade_force" {
+  type        = bool
+  default     = false
+  description = "Force the Talos upgrade by skipping etcd health and member checks."
+}
+
+variable "talos_upgrade_insecure" {
+  type        = bool
+  default     = false
+  description = "Upgrade using the insecure (no auth) maintenance service."
+}
+
+variable "talos_upgrade_reboot_mode" {
+  type        = string
+  default     = null
+  description = "Select the reboot mode during upgrade. Mode \"powercycle\" bypasses kexec. Valid values: \"default\" or \"powercycle\"."
+
+  validation {
+    condition     = var.talos_upgrade_reboot_mode == null || contains(["default", "powercycle"], var.talos_upgrade_reboot_mode)
+    error_message = "The talos_upgrade_reboot_mode must be \"default\" or \"powercycle\"."
+  }
+}
+
+variable "talos_upgrade_stage" {
+  type        = bool
+  default     = false
+  description = "Stage the Talos upgrade to perform it after a reboot."
+}
+
+variable "talos_discovery_kubernetes_enabled" {
+  type        = bool
+  default     = false
+  description = "Enable or disable Kubernetes-based Talos discovery service. Deprecated as of Kubernetes v1.32, where the AuthorizeNodeWithSelectors feature gate is enabled by default."
+}
+
+variable "talos_discovery_service_enabled" {
+  type        = bool
+  default     = true
+  description = "Enable or disable Sidero Labs public Talos discovery service."
 }
 
 variable "talos_kubelet_extra_mounts" {
@@ -498,7 +569,7 @@ variable "talos_service_log_destinations" {
 # Kubernetes
 variable "kubernetes_version" {
   type        = string
-  default     = "v1.31.4"
+  default     = "v1.35.2" # https://github.com/kubernetes/kubernetes
   description = "Specifies the Kubernetes version to deploy."
 }
 
@@ -512,6 +583,61 @@ variable "kubernetes_kubelet_extra_config" {
   type        = any
   default     = {}
   description = "Specifies additional configuration settings for the kubelet service. These settings can customize or override default kubelet configurations, allowing for tailored cluster behavior."
+}
+
+variable "kubernetes_apiserver_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kube-apiserver (e.g., 'my-registry.io/kube-apiserver'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_apiserver_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_apiserver_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kube-apiserver'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
+variable "kubernetes_controller_manager_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kube-controller-manager (e.g., 'my-registry.io/kube-controller-manager'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_controller_manager_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_controller_manager_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kube-controller-manager'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
+variable "kubernetes_scheduler_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kube-scheduler (e.g., 'my-registry.io/kube-scheduler'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_scheduler_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_scheduler_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kube-scheduler'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
+variable "kubernetes_proxy_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kube-proxy (e.g., 'my-registry.io/kube-proxy'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_proxy_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_proxy_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kube-proxy'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
+variable "kubernetes_kubelet_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kubelet (e.g., 'my-registry.io/kubelet'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_kubelet_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_kubelet_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kubelet'). The version tag is appended automatically from kubernetes_version."
+  }
 }
 
 
@@ -544,7 +670,7 @@ variable "kube_api_extra_args" {
 # Talos CCM
 variable "talos_ccm_version" {
   type        = string
-  default     = "v1.9.0" # https://github.com/siderolabs/talos-cloud-controller-manager
+  default     = "v1.12.0" # https://github.com/siderolabs/talos-cloud-controller-manager
   description = "Specifies the version of the Talos Cloud Controller Manager (CCM) to use. This version controls cloud-specific integration features in the Talos operating system."
 }
 

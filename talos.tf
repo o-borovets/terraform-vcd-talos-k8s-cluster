@@ -1,4 +1,10 @@
 locals {
+  # Talos Version
+  talos_version_parts = regex("^v?(?P<major>[0-9]+)\\.(?P<minor>[0-9]+)\\.(?P<patch>[0-9]+)", var.talos_version)
+  talos_version_major = local.talos_version_parts.major
+  talos_version_minor = local.talos_version_parts.minor
+  talos_version_patch = local.talos_version_parts.patch
+
   # Talos Nodes
   talos_primary_node_name         = sort(keys(vcd_vapp_vm.control_plane))[0]
   talos_primary_node_private_ipv4 = tolist(vcd_vapp_vm.control_plane[local.talos_primary_node_name].network)[0].ip
@@ -44,6 +50,28 @@ locals {
   kube_prism_host = "127.0.0.1"
   kube_prism_port = 7445
 
+  # Talos Control
+  talosctl_commands = templatefile("${path.module}/templates/talosctl_commands.sh.tftpl", {
+    talos_upgrade_debug                 = var.talos_upgrade_debug
+    talos_upgrade_force                 = var.talos_upgrade_force
+    talos_upgrade_insecure              = var.talos_upgrade_insecure
+    talos_upgrade_stage                 = var.talos_upgrade_stage
+    talos_upgrade_reboot_mode           = var.talos_upgrade_reboot_mode
+    talos_installer_image_url           = local.talos_installer_image_url
+    talosctl_retries                    = var.talosctl_retries
+    healthcheck_enabled                 = var.cluster_healthcheck_enabled
+    talos_primary_node                  = local.talos_primary_node_private_ipv4
+    kube_api_url                        = local.kube_api_url_external
+    kubernetes_version                  = var.kubernetes_version
+    kubernetes_apiserver_image          = var.kubernetes_apiserver_image
+    kubernetes_controller_manager_image = var.kubernetes_controller_manager_image
+    kubernetes_scheduler_image          = var.kubernetes_scheduler_image
+    kubernetes_proxy_image              = var.kubernetes_proxy_image
+    kubernetes_kubelet_image            = var.kubernetes_kubelet_image
+    control_plane_nodes                 = local.control_plane_private_ipv4_list
+    worker_nodes                        = local.worker_private_ipv4_list
+  })
+
   # Cluster Status
   # cluster_initialized = length(data.vcd_vapp.state.metadata_entry) > 0
   cluster_initialized = length(data.vcd_resource_list.state.list) > 0
@@ -72,34 +100,27 @@ resource "terraform_data" "upgrade_control_plane" {
   ]
 
   provisioner "local-exec" {
-    when    = create
-    quiet   = true
-    command = <<-EOT
-      set -eu
+    when  = create
+    quiet = true
+    command = local.cluster_initialized ? join("\n", [
+      "set -eu",
+      local.talosctl_commands,
+      "printf '%s\\n' \"Start upgrading Control Plane Nodes\"",
+      templatefile("${path.module}/templates/talos_upgrade.sh.tftpl", {
+        upgrade_nodes      = local.control_plane_private_ipv4_list
+        talos_version      = var.talos_version
+        talos_schematic_id = local.talos_schematic_id
+      }),
+      "printf '%s\\n' \"Control Plane Nodes upgraded successfully\"",
+    ]) : "printf '%s\\n' \"Cluster not initialized, skipping Control Plane Node upgrade\""
 
-      talosconfig_tmp=$(mktemp)
-      trap '{ rm -f "$talosconfig_tmp"; }' EXIT
-      printf '%s' "$TALOSCONFIG_CONTENT" > "$talosconfig_tmp"
-
-      if ${local.cluster_initialized}; then
-        echo "Start upgrading control plane nodes"
-        ${var.cluster_healthcheck_enabled} && talosctl --talosconfig "$talosconfig_tmp" health --server -n '${local.talos_primary_node_private_ipv4}'
-        set -- ${join(" ", local.control_plane_private_ipv4_list)}
-        for host in "$@"; do
-          talosctl --talosconfig "$talosconfig_tmp" upgrade -n "$host" --preserve --image '${local.talos_installer_image_url}'
-          ${var.cluster_healthcheck_enabled} && talosctl --talosconfig "$talosconfig_tmp" health --server -n "$host"
-        done
-        echo "Control plane nodes upgraded successfully"
-      else
-        echo "Cluster not initialized, skipping control plane node upgrade"
-      fi
-    EOT
     environment = {
-      TALOSCONFIG_CONTENT = nonsensitive(data.talos_client_configuration.this.talos_config)
+      TALOSCONFIG = nonsensitive(data.talos_client_configuration.this.talos_config)
     }
   }
 
   depends_on = [
+    data.external.talosctl_version_check,
     data.talos_machine_configuration.control_plane,
     data.talos_client_configuration.this
   ]
@@ -112,68 +133,62 @@ resource "terraform_data" "upgrade_worker" {
   ]
 
   provisioner "local-exec" {
-    when    = create
-    quiet   = true
-    command = <<-EOT
-      set -eu
+    when  = create
+    quiet = true
+    command = local.cluster_initialized ? join("\n", [
+      "set -eu",
+      local.talosctl_commands,
+      "printf '%s\\n' \"Start upgrading Worker Nodes\"",
+      templatefile("${path.module}/templates/talos_upgrade.sh.tftpl", {
+        upgrade_nodes      = local.worker_private_ipv4_list
+        talos_version      = var.talos_version
+        talos_schematic_id = local.talos_schematic_id
+      }),
+      "printf '%s\\n' \"Worker Nodes upgraded successfully\"",
+    ]) : "printf '%s\\n' \"Cluster not initialized, skipping Worker Node upgrade\""
 
-      talosconfig_tmp=$(mktemp)
-      trap '{ rm -f "$talosconfig_tmp"; }' EXIT
-      printf '%s' "$TALOSCONFIG_CONTENT" > "$talosconfig_tmp"
-
-      if ${local.cluster_initialized}; then
-        echo "Start upgrading worker nodes"
-        ${var.cluster_healthcheck_enabled} && talosctl --talosconfig "$talosconfig_tmp" health --server -n '${local.talos_primary_node_private_ipv4}'
-        set -- ${join(" ", local.worker_private_ipv4_list)}
-        for host in "$@"; do
-          talosctl --talosconfig "$talosconfig_tmp" upgrade -n "$host" --preserve --image '${local.talos_installer_image_url}'
-          ${var.cluster_healthcheck_enabled} && talosctl --talosconfig "$talosconfig_tmp" health --server -n '${local.talos_primary_node_private_ipv4}'
-        done
-        echo "Worker nodes upgraded successfully"
-      else
-        echo "Cluster not initialized, skipping worker node upgrade"
-      fi
-    EOT
     environment = {
-      TALOSCONFIG_CONTENT = nonsensitive(data.talos_client_configuration.this.talos_config)
+      TALOSCONFIG = nonsensitive(data.talos_client_configuration.this.talos_config)
     }
   }
 
   depends_on = [
+    data.external.talosctl_version_check,
     data.talos_machine_configuration.worker,
     terraform_data.upgrade_control_plane
   ]
 }
 
 resource "terraform_data" "upgrade_kubernetes" {
-  triggers_replace = [var.kubernetes_version]
+  triggers_replace = [
+    var.kubernetes_version,
+    var.kubernetes_apiserver_image,
+    var.kubernetes_controller_manager_image,
+    var.kubernetes_scheduler_image,
+    var.kubernetes_proxy_image,
+    var.kubernetes_kubelet_image,
+  ]
 
   provisioner "local-exec" {
-    when    = create
-    quiet   = true
-    command = <<-EOT
-      set -eu
+    when  = create
+    quiet = true
+    command = join("\n", [
+      "set -eu",
+      local.cluster_initialized ? join("\n", [
+        local.talosctl_commands,
+        "printf '%s\\n' \"Start upgrading Kubernetes\"",
+        templatefile("${path.module}/templates/talos_upgrade_k8s.sh.tftpl", {}),
+        "printf '%s\\n' \"Kubernetes upgraded successfully\"",
+      ]) : "printf '%s\\n' \"Cluster not initialized, skipping Kubernetes upgrade\"",
+    ])
 
-      talosconfig_tmp=$(mktemp)
-      trap '{ rm -f "$talosconfig_tmp"; }' EXIT
-      printf '%s' "$TALOSCONFIG_CONTENT" > "$talosconfig_tmp"
-
-      if ${local.cluster_initialized}; then
-        echo "Start upgrading Kubernetes"
-        ${var.cluster_healthcheck_enabled} && talosctl --talosconfig "$talosconfig_tmp" health --server -n '${local.talos_primary_node_private_ipv4}'
-        talosctl --talosconfig "$talosconfig_tmp" upgrade-k8s -n '${local.talos_primary_node_private_ipv4}' --endpoint '${local.kube_api_url_external}' --to '${var.kubernetes_version}'
-        ${var.cluster_healthcheck_enabled} && talosctl --talosconfig "$talosconfig_tmp" health --server -n '${local.talos_primary_node_private_ipv4}'
-        echo "Kubernetes upgraded successfully"
-      else
-        echo "Cluster not initialized, skipping Kubernetes upgrade"
-      fi
-    EOT
     environment = {
-      TALOSCONFIG_CONTENT = nonsensitive(data.talos_client_configuration.this.talos_config)
+      TALOSCONFIG = nonsensitive(data.talos_client_configuration.this.talos_config)
     }
   }
 
   depends_on = [
+    data.external.talosctl_version_check,
     terraform_data.upgrade_control_plane,
     terraform_data.upgrade_worker
   ]
@@ -209,6 +224,10 @@ resource "talos_machine_configuration_apply" "worker" {
   node                        = tolist(each.value.network)[0].ip
   apply_mode                  = var.talos_machine_configuration_apply_mode
 
+  lifecycle {
+    replace_triggered_by = [vcd_vapp_vm.worker[each.key].id]
+  }
+
   on_destroy = {
     graceful = var.cluster_graceful_destroy
     reset    = true
@@ -235,35 +254,33 @@ resource "talos_machine_bootstrap" "this" {
 resource "terraform_data" "synchronize_manifests" {
   triggers_replace = [
     sha1(jsonencode(local.talos_inline_manifests)),
-    var.talos_ccm_version,
+    sha1(jsonencode(local.talos_manifests)),
   ]
 
   provisioner "local-exec" {
-    when    = create
-    quiet   = true
-    command = <<-EOT
-      set -eu
+    when  = create
+    quiet = true
+    command = join("\n", [
+      "set -eu",
+      local.cluster_initialized ? join("\n", [
+        local.talosctl_commands,
+        "printf '%s\\n' \"Start synchronizing Kubernetes manifests\"",
+        templatefile("${path.module}/templates/talos_upgrade_k8s.sh.tftpl", {}),
+        "printf '%s\\n' \"Kubernetes manifests synchronized successfully\"",
+      ]) : "printf '%s\\n' \"Cluster not initialized, skipping Kubernetes manifest synchronization\"",
+    ])
 
-      talosconfig_tmp=$(mktemp)
-      trap '{ rm -f "$talosconfig_tmp"; }' EXIT
-      printf '%s' "$TALOSCONFIG_CONTENT" > "$talosconfig_tmp"
-
-      if ${local.cluster_initialized}; then
-        echo "Start synchronizing manifests"
-        ${var.cluster_healthcheck_enabled} && talosctl --talosconfig "$talosconfig_tmp" health --server -n '${local.talos_primary_node_private_ipv4}'
-        talosctl --talosconfig "$talosconfig_tmp" upgrade-k8s -n '${local.talos_primary_node_private_ipv4}' --endpoint '${local.kube_api_url_external}' --to '${var.kubernetes_version}'
-        ${var.cluster_healthcheck_enabled} && talosctl --talosconfig "$talosconfig_tmp" health --server -n '${local.talos_primary_node_private_ipv4}'
-        echo "Manifests synchronized successfully"
-      else
-        echo "Cluster not initialized, skipping manifest synchronization"
-      fi
-    EOT
     environment = {
-      TALOSCONFIG_CONTENT = nonsensitive(data.talos_client_configuration.this.talos_config)
+      TALOSCONFIG = nonsensitive(data.talos_client_configuration.this.talos_config)
     }
   }
 
-  depends_on = [talos_machine_bootstrap.this]
+  depends_on = [
+    data.external.talosctl_version_check,
+    talos_machine_bootstrap.this,
+    talos_machine_configuration_apply.control_plane,
+    talos_machine_configuration_apply.worker,
+  ]
 }
 
 resource "tls_private_key" "state" {
