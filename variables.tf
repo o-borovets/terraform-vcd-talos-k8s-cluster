@@ -415,7 +415,30 @@ variable "talos_upgrade_reboot_mode" {
 variable "talos_upgrade_stage" {
   type        = bool
   default     = false
-  description = "Stage the Talos upgrade to perform it after a reboot."
+  description = "Stage the Talos upgrade to perform it after a reboot. Legacy upgrade path only, see talos_upgrade_legacy."
+}
+
+variable "talos_reboot_debug" {
+  type        = bool
+  default     = false
+  description = "Enable debug operation from kernel logs during Talos reboots. When true, --wait is set to true by talosctl."
+}
+
+variable "talos_reboot_mode" {
+  type        = string
+  default     = null
+  description = "Select the reboot mode. Mode \"powercycle\" bypasses kexec, and mode \"force\" skips graceful teardown. Valid values: \"default\", \"powercycle\", or \"force\"."
+
+  validation {
+    condition     = var.talos_reboot_mode == null ? true : contains(["default", "powercycle", "force"], var.talos_reboot_mode)
+    error_message = "The talos_reboot_mode must be \"default\", \"powercycle\", or \"force\"."
+  }
+}
+
+variable "talos_staged_configuration_automatic_reboot_enabled" {
+  type        = bool
+  default     = true
+  description = "Determines whether nodes are rebooted automatically after Talos machine configuration changes are applied in 'staged' mode, or when 'staged_if_needing_reboot' resolves to 'staged' mode. Without this, a staged configuration sits pending until something else reboots the node."
 }
 
 variable "talos_discovery_kubernetes_enabled" {

@@ -80,6 +80,15 @@ locals {
   kube_prism_host = "127.0.0.1"
   kube_prism_port = 7445
 
+  # Staged machine configuration changes only take effect on the next reboot. Unless
+  # something reboots the node, a staged change sits pending indefinitely, so the
+  # module issues the reboot itself. Only meaningful for the two apply modes that can
+  # produce a staged result.
+  talos_staged_configuration_automatic_reboot_enabled = (
+    var.talos_staged_configuration_automatic_reboot_enabled &&
+    contains(["staged", "staged_if_needing_reboot"], var.talos_machine_configuration_apply_mode)
+  )
+
   # Talos Control
   talosctl_commands = templatefile("${path.module}/templates/talosctl_commands.sh.tftpl", {
     talos_upgrade_debug                 = var.talos_upgrade_debug
@@ -87,6 +96,8 @@ locals {
     talos_upgrade_insecure              = var.talos_upgrade_insecure
     talos_upgrade_stage                 = var.talos_upgrade_stage
     talos_upgrade_reboot_mode           = var.talos_upgrade_reboot_mode
+    talos_reboot_debug                  = var.talos_reboot_debug
+    talos_reboot_mode                   = var.talos_reboot_mode
     talos_installer_image_url           = local.talos_installer_image_url
     talosctl_retries                    = var.talosctl_retries
     healthcheck_enabled                 = var.cluster_healthcheck_enabled
@@ -245,6 +256,43 @@ resource "talos_machine_configuration_apply" "control_plane" {
   ]
 }
 
+resource "terraform_data" "talos_staged_configuration_reboot_control_plane" {
+  count = local.talos_staged_configuration_automatic_reboot_enabled ? 1 : 0
+
+  triggers_replace = [
+    nonsensitive(sha1(jsonencode({
+      for k, v in data.talos_machine_configuration.control_plane :
+      k => v.machine_configuration
+    })))
+  ]
+
+  provisioner "local-exec" {
+    when  = create
+    quiet = true
+    command = anytrue([for _, v in talos_machine_configuration_apply.control_plane : v.resolved_apply_mode == "staged"]) ? join("\n", [
+      "set -eu",
+      local.talosctl_commands,
+      templatefile("${path.module}/templates/talos_reboot.sh.tftpl", {
+        target_nodes        = local.control_plane_private_ipv4_list
+        healthcheck_enabled = local.cluster_initialized
+      })
+    ]) : "printf '%s\\n' \"No control plane configuration changes were applied in staged mode. Skipping reboot.\""
+
+    environment = merge(
+      { TALOSCONFIG = nonsensitive(data.talos_client_configuration.this.talos_config) },
+      {
+        for _, apply in talos_machine_configuration_apply.control_plane :
+        "TALOS_APPLY_MODE_${replace(apply.node, ".", "_")}" => apply.resolved_apply_mode
+      }
+    )
+  }
+
+  depends_on = [
+    data.external.talosctl_version_check,
+    talos_machine_configuration_apply.control_plane
+  ]
+}
+
 resource "talos_machine_configuration_apply" "worker" {
   for_each = { for worker in vcd_vapp_vm.worker : worker.name => worker }
 
@@ -266,7 +314,45 @@ resource "talos_machine_configuration_apply" "worker" {
 
   depends_on = [
     terraform_data.upgrade_kubernetes,
-    talos_machine_configuration_apply.control_plane
+    talos_machine_configuration_apply.control_plane,
+    terraform_data.talos_staged_configuration_reboot_control_plane
+  ]
+}
+
+resource "terraform_data" "talos_staged_configuration_reboot_worker" {
+  count = local.talos_staged_configuration_automatic_reboot_enabled ? 1 : 0
+
+  triggers_replace = [
+    nonsensitive(sha1(jsonencode({
+      for k, v in data.talos_machine_configuration.worker :
+      k => v.machine_configuration
+    })))
+  ]
+
+  provisioner "local-exec" {
+    when  = create
+    quiet = true
+    command = anytrue([for _, v in talos_machine_configuration_apply.worker : v.resolved_apply_mode == "staged"]) ? join("\n", [
+      "set -eu",
+      local.talosctl_commands,
+      templatefile("${path.module}/templates/talos_reboot.sh.tftpl", {
+        target_nodes        = local.worker_private_ipv4_list
+        healthcheck_enabled = local.cluster_initialized
+      })
+    ]) : "printf '%s\\n' \"No worker configuration changes were applied in staged mode. Skipping reboot.\""
+
+    environment = merge(
+      { TALOSCONFIG = nonsensitive(data.talos_client_configuration.this.talos_config) },
+      {
+        for _, apply in talos_machine_configuration_apply.worker :
+        "TALOS_APPLY_MODE_${replace(apply.node, ".", "_")}" => apply.resolved_apply_mode
+      }
+    )
+  }
+
+  depends_on = [
+    data.external.talosctl_version_check,
+    talos_machine_configuration_apply.worker
   ]
 }
 
@@ -310,6 +396,8 @@ resource "terraform_data" "synchronize_manifests" {
     talos_machine_bootstrap.this,
     talos_machine_configuration_apply.control_plane,
     talos_machine_configuration_apply.worker,
+    terraform_data.talos_staged_configuration_reboot_control_plane,
+    terraform_data.talos_staged_configuration_reboot_worker,
   ]
 }
 
