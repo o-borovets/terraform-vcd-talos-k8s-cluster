@@ -4,9 +4,9 @@ locals {
   # Kubernetes Manifests for Talos
   talos_inline_manifests = concat(
     [
+      local.talos_ccm_manifest,
       # local.talos_backup_manifest,
       # local.hcloud_secret_manifest,
-      # local.hcloud_ccm_manifest,
       # local.cilium_manifest
     ],
     # local.hcloud_csi_manifest != null ? [local.hcloud_csi_manifest] : [],
@@ -16,8 +16,11 @@ locals {
     # local.ingress_nginx_manifest != null ? [local.ingress_nginx_manifest] : [],
     # local.cluster_autoscaler_manifest != null ? [local.cluster_autoscaler_manifest] : []
   )
+  # The Talos CCM used to be listed here as a URL. It is now an inline manifest
+  # (see talos_ccm.tf) so its --controllers list is ours to set. Leaving the URL
+  # in place as well would have Talos apply the stock upstream copy over the
+  # inline one every time the machine configuration is applied.
   talos_manifests = [
-    "https://raw.githubusercontent.com/siderolabs/talos-cloud-controller-manager/${var.talos_ccm_version}/docs/deploy/cloud-controller-manager-daemonset.yml",
     # "https://github.com/prometheus-operator/prometheus-operator/releases/download/${var.prometheus_operator_crds_version}/stripped-down-crds.yaml"
   ]
 

@@ -759,7 +759,59 @@ variable "kube_api_extra_args" {
 variable "talos_ccm_version" {
   type        = string
   default     = "v1.12.0" # https://github.com/siderolabs/talos-cloud-controller-manager
-  description = "Specifies the version of the Talos Cloud Controller Manager (CCM) to use. This version controls cloud-specific integration features in the Talos operating system."
+  description = "Specifies the version of the Talos Cloud Controller Manager (CCM) to use. This version controls cloud-specific integration features in the Talos operating system. The manifest in talos_ccm.tf is a snapshot of the v1.9.0 bundle shape; re-vendor it when changing this, because later releases change more than the image tag."
+}
+
+variable "talos_ccm_image" {
+  type        = string
+  default     = "ghcr.io/siderolabs/talos-cloud-controller-manager"
+  description = "Container image repository for the Talos CCM, without a tag. Override to pull from a mirror."
+}
+
+variable "talos_ccm_controllers" {
+  type        = list(string)
+  default     = ["node-csr-approval"]
+  description = <<-EOT
+    Controllers the Talos CCM should run, passed through as --controllers.
+
+    The default is deliberately narrower than upstream's
+    ["cloud-node", "node-csr-approval"]. This module always deploys alongside the
+    VMware Cloud Director CCM, which runs its own cloud-node and cloud-node-lifecycle;
+    running cloud-node in both makes node initialisation a race whose winner sets the
+    node's providerID, and the schemes are not interchangeable. node-csr-approval has
+    no counterpart in the VCD CCM or in kube-controller-manager — which auto-approves
+    only kubernetes.io/kube-apiserver-client-kubelet, never kubernetes.io/kubelet-serving
+    — so it must stay with the Talos CCM.
+
+    Do not use "*": upstream intends cloud-node-lifecycle to be disabled by default but
+    registers the wrong constant for it, so the wildcard enables it and it fights the
+    VCD CCM. An explicit list is unaffected by that bug.
+  EOT
+
+  validation {
+    condition     = length(var.talos_ccm_controllers) > 0
+    error_message = "The talos_ccm_controllers list must not be empty."
+  }
+
+  validation {
+    condition = alltrue([
+      for c in var.talos_ccm_controllers : contains([
+        "cloud-node", "cloud-node-controller",
+        "cloud-node-lifecycle", "cloud-node-lifecycle-controller",
+        "route", "node-route-controller",
+        "service", "service-lb-controller",
+        "nodeipam", "node-ipam-controller",
+        "node-csr-approval", "certificatesigningrequest-approving-controller",
+      ], c)
+    ])
+    error_message = "Each entry in talos_ccm_controllers must be a controller name or alias recognised by the Talos CCM."
+  }
+}
+
+variable "talos_ccm_secure_port" {
+  type        = number
+  default     = 50258
+  description = "Port the Talos CCM serves metrics and health endpoints on. Upstream changed this from 50258 to 10458 in v1.13.0; changing it on a live cluster can deadlock the manifest sync, because the Service port list merges under server-side apply by (port, protocol) and the stale entry is co-owned by the CCM's own field manager. If that happens, delete the Service and DaemonSet in kube-system while the apply is still retrying."
 }
 
 variable "hcloud_network" {
