@@ -2,13 +2,13 @@ locals {
   kubeconfig = replace(
     talos_cluster_kubeconfig.this.kubeconfig_raw,
     "/(\\s+server:).*/",
-    "$1 ${local.kube_api_url_external}"
+    "$1 ${local.kubeconfig_url}"
   )
   talosconfig = data.talos_client_configuration.this.talos_config
 
   kubeconfig_data = {
     name   = var.cluster_name
-    server = local.kube_api_url_external
+    server = local.kubeconfig_url
     ca     = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.ca_certificate)
     cert   = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_certificate)
     key    = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_key)
@@ -110,13 +110,13 @@ data "external" "talosctl_version_check" {
 data "talos_client_configuration" "this" {
   cluster_name         = var.cluster_name
   client_configuration = talos_machine_secrets.this.client_configuration
-  endpoints            = local.talos_endpoints
-  nodes                = [local.talos_primary_node_private_ipv4]
+  endpoints            = local.talosconfig_endpoints
+  nodes                = local.talosconfig_endpoints
 }
 
 resource "talos_cluster_kubeconfig" "this" {
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = local.talos_primary_endpoint
+  node                 = local.talos_transport_primary_endpoint
 
   depends_on = [talos_machine_configuration_apply.control_plane]
 }

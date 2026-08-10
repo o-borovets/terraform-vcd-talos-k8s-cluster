@@ -32,7 +32,7 @@ data "talos_machine_configuration" "vm_cp_init_config" {
 
   talos_version      = var.talos_version
   cluster_name       = var.cluster_name
-  cluster_endpoint   = "https://${local.control_plane_private_vip_ipv4}:${local.kube_api_port}"
+  cluster_endpoint   = local.kube_api_url_internal
   kubernetes_version = var.kubernetes_version
 
   config_patches = [
@@ -167,7 +167,7 @@ data "talos_machine_configuration" "vm_worker_init_config" {
 
   talos_version      = var.talos_version
   cluster_name       = var.cluster_name
-  cluster_endpoint   = "https://${local.control_plane_private_vip_ipv4}:${local.kube_api_port}"
+  cluster_endpoint   = local.kube_api_url_internal
   kubernetes_version = var.kubernetes_version
 
   config_patches = [

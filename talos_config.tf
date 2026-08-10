@@ -40,7 +40,7 @@ locals {
           local.control_plane_public_ipv4_list,
           # local.control_plane_public_ipv6_list,
           # Other Addresses
-          [var.kube_api_hostname],
+          [var.kube_api_hostname, var.kube_api_private_hostname],
           ["127.0.0.1", "::1", "localhost"],
         )
       )
@@ -71,10 +71,10 @@ locals {
 
   # Extra Host Entries
   extra_host_entries = concat(
-    var.kube_api_hostname != null ? [
+    length(compact([var.kube_api_hostname, var.kube_api_private_hostname])) > 0 ? [
       {
         ip      = local.kube_api_private_ipv4
-        aliases = [var.kube_api_hostname]
+        aliases = distinct(compact([var.kube_api_hostname, var.kube_api_private_hostname]))
       }
     ] : [],
     var.talos_extra_host_entries

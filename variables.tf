@@ -31,6 +31,28 @@ variable "cluster_access" {
   }
 }
 
+variable "kubeconfig_endpoint_mode" {
+  type        = string
+  default     = "auto"
+  description = "Controls which endpoint is written into the generated kubeconfig. Use explicit modes to separate user-facing kubeconfig access from the module's own transport path."
+
+  validation {
+    condition     = contains(["auto", "public_ip", "private_ip", "public_endpoint", "private_endpoint"], var.kubeconfig_endpoint_mode)
+    error_message = "The kubeconfig_endpoint_mode must be 'auto', 'public_ip', 'private_ip', 'public_endpoint', or 'private_endpoint'."
+  }
+}
+
+variable "talosconfig_endpoints_mode" {
+  type        = string
+  default     = "auto"
+  description = "Controls which control plane node addresses are written into the generated talosconfig. Talos recommends direct per-node IPs instead of a VIP or load-balanced hostname."
+
+  validation {
+    condition     = contains(["auto", "public_ip", "private_ip"], var.talosconfig_endpoints_mode)
+    error_message = "The talosconfig_endpoints_mode must be 'auto', 'public_ip', or 'private_ip'."
+  }
+}
+
 variable "cluster_kubeconfig_path" {
   type        = string
   default     = null
@@ -385,7 +407,7 @@ variable "talos_upgrade_reboot_mode" {
   description = "Select the reboot mode during upgrade. Mode \"powercycle\" bypasses kexec. Valid values: \"default\" or \"powercycle\"."
 
   validation {
-    condition     = var.talos_upgrade_reboot_mode == null || contains(["default", "powercycle"], var.talos_upgrade_reboot_mode)
+    condition     = var.talos_upgrade_reboot_mode == null ? true : contains(["default", "powercycle"], var.talos_upgrade_reboot_mode)
     error_message = "The talos_upgrade_reboot_mode must be \"default\" or \"powercycle\"."
   }
 }
@@ -446,11 +468,11 @@ variable "talos_kernel_modules" {
 variable "talos_machine_configuration_apply_mode" {
   type        = string
   default     = "auto"
-  description = "Determines how changes to Talos machine configurations are applied. 'auto' (default) applies changes immediately and reboots if necessary. 'reboot' applies changes and then reboots the node. 'no_reboot' applies changes immediately without a reboot, failing if a reboot is required. 'staged' stages changes to apply on the next reboot without initiating a reboot."
+  description = "Determines how changes to Talos machine configurations are applied. 'auto' applies changes immediately and reboots if necessary. 'reboot' applies changes and then reboots the node. 'no_reboot' applies changes immediately without a reboot, failing if a reboot is required. 'staged' stages changes for the next reboot. 'staged_if_needing_reboot' applies immediately when safe and stages only when a reboot is required."
 
   validation {
-    condition     = contains(["auto", "reboot", "no_reboot", "staged"], var.talos_machine_configuration_apply_mode)
-    error_message = "The talos_machine_configuration_apply_mode must be 'auto', 'reboot', 'no_reboot', or 'staged'."
+    condition     = contains(["auto", "reboot", "no_reboot", "staged", "staged_if_needing_reboot"], var.talos_machine_configuration_apply_mode)
+    error_message = "The talos_machine_configuration_apply_mode must be 'auto', 'reboot', 'no_reboot', 'staged', or 'staged_if_needing_reboot'."
   }
 }
 
@@ -645,7 +667,13 @@ variable "kubernetes_kubelet_image" {
 variable "kube_api_hostname" {
   type        = string
   default     = null
-  description = "Specifies the hostname for external access to the Kubernetes API server. This must be a valid domain name, set to the API's public IP address."
+  description = "Optional public DNS hostname for the Kubernetes API. Use this with kubeconfig_endpoint_mode='public_endpoint' when kubeconfig should point at a stable public DNS or load balancer address."
+}
+
+variable "kube_api_private_hostname" {
+  type        = string
+  default     = null
+  description = "Optional private DNS hostname for the Kubernetes API. Use this with kubeconfig_endpoint_mode='private_endpoint' when kubeconfig should point at a private VIP or split-horizon DNS name."
 }
 
 variable "kube_api_load_balancer_enabled" {
