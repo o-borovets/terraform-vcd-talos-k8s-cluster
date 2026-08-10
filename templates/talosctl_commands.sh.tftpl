@@ -41,9 +41,28 @@ talos_wait_for_health() {
   done
 }
 
+# talosctl picks one of two upgrade paths per node, and the flags below are not
+# equally live on both:
+#
+#   new path  LifecycleService.Upgrade, used only when the node ALREADY runs
+#             Talos >1.13.0-alpha.2 (talosUpgradeAPIVersionRange in
+#             cmd/talosctl/cmd/talos/upgrade.go). Honours --reboot-mode and
+#             --drain; IGNORES --preserve, --force and --stage.
+#   legacy    MachineService.Upgrade. Chosen automatically when the node is
+#             below that range, or forced with --legacy. This is where
+#             --preserve, --force and --stage do anything at all; talosctl
+#             marks all three deprecated, for removal in Talos 1.18.
+#
+# The version tested is the node's CURRENT version, not the target. A cluster
+# walking up from an older Talos therefore takes the legacy path on every hop
+# until the nodes themselves are past 1.13, which makes --preserve live for
+# precisely the upgrades where it matters most.
 talos_upgrade() {
   talosctl upgrade \
     --talosconfig "$talosconfig" \
+%{ if talos_upgrade_legacy ~}
+    --legacy \
+%{ endif ~}
 %{ if talos_upgrade_debug ~}
     --debug \
 %{ endif ~}
@@ -52,6 +71,9 @@ talos_upgrade() {
 %{ endif ~}
 %{ if talos_upgrade_insecure ~}
     --insecure \
+%{ endif ~}
+%{ if talos_upgrade_preserve ~}
+    --preserve \
 %{ endif ~}
 %{ if talos_upgrade_stage ~}
     --stage \

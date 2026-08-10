@@ -95,6 +95,8 @@ locals {
     talos_upgrade_force                 = var.talos_upgrade_force
     talos_upgrade_insecure              = var.talos_upgrade_insecure
     talos_upgrade_stage                 = var.talos_upgrade_stage
+    talos_upgrade_preserve              = var.talos_upgrade_preserve
+    talos_upgrade_legacy                = var.talos_upgrade_legacy
     talos_upgrade_reboot_mode           = var.talos_upgrade_reboot_mode
     talos_reboot_debug                  = var.talos_reboot_debug
     talos_reboot_mode                   = var.talos_reboot_mode

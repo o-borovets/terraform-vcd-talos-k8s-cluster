@@ -418,6 +418,43 @@ variable "talos_upgrade_stage" {
   description = "Stage the Talos upgrade to perform it after a reboot. Legacy upgrade path only, see talos_upgrade_legacy."
 }
 
+variable "talos_upgrade_preserve" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Preserve the contents of the EPHEMERAL partition (/var) across a Talos upgrade,
+    rather than wiping it and letting the node rebuild from scratch.
+
+    This matters most on control planes, where /var/lib/etcd lives: with preserve
+    disabled, every upgraded control plane discards its etcd data and re-syncs from
+    the surviving quorum members, so each node upgrade spends time at reduced
+    redundancy. On workers it decides whether the container image cache and
+    /var/lib/kubelet survive, i.e. whether every image is pulled again afterwards.
+
+    Legacy upgrade path only, see talos_upgrade_legacy. Disable it deliberately when
+    a node needs a clean ephemeral partition, for example to clear corrupted local
+    state, and prefer doing that one node at a time rather than for a whole walk.
+  EOT
+}
+
+variable "talos_upgrade_legacy" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Force talosctl to use the legacy MachineService.Upgrade path instead of letting
+    it choose. Leave false to let talosctl decide: it uses the newer
+    LifecycleService.Upgrade API when the node already runs Talos >1.13.0-alpha.2
+    and falls back to the legacy path otherwise.
+
+    The choice is not cosmetic. talos_upgrade_preserve, talos_upgrade_force and
+    talos_upgrade_stage are honoured only on the legacy path; the new path silently
+    ignores them, and instead drains the node (cordon and evict) before rebooting.
+    Set this to true when those flags must apply deterministically across a version
+    walk that will cross 1.13 partway through. talosctl marks the legacy path
+    deprecated, for removal in Talos 1.18.
+  EOT
+}
+
 variable "talos_reboot_debug" {
   type        = bool
   default     = false
