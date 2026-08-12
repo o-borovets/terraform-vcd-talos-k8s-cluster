@@ -68,8 +68,16 @@ data "talos_image_factory_urls" "amd64" {
 resource "terraform_data" "talos-ova" {
   triggers_replace = [data.talos_image_factory_urls.amd64.urls.disk_image]
 
+  # -fSL, not bare -s. The image factory answers the disk_image URL with a 302
+  # to a signed asset host, so a download without --location silently writes the
+  # 517-byte redirect page and exits 0 — and without --fail any HTTP error does
+  # the same. Caught on zeta 2026-08-12: the file on disk was an HTML document.
+  # Nothing broke, only because vcd_catalog_item had been renamed in place on
+  # every version bump since the catalog was first populated, so the bad file
+  # was never uploaded. It would be uploaded as the vApp template the first time
+  # that resource is genuinely replaced, or on any fresh cluster build.
   provisioner "local-exec" {
-    command = "curl -s -o ${path.root}/${element(split("/", data.talos_image_factory_urls.amd64.urls.disk_image), -1)} ${data.talos_image_factory_urls.amd64.urls.disk_image}"
+    command = "curl -fSL --retry 3 --retry-delay 5 -o ${path.root}/${element(split("/", data.talos_image_factory_urls.amd64.urls.disk_image), -1)} ${data.talos_image_factory_urls.amd64.urls.disk_image}"
   }
 }
 
