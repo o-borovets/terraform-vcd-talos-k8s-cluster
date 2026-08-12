@@ -55,3 +55,103 @@ resource "vcd_nsxt_alb_virtual_service" "kube_api" {
     type       = "TCP_PROXY"
   }
 }
+
+# Ingress Load Balancer
+#
+# Fronts the ingress controller's NodePorts on a public VIP. Separate from the
+# Kubernetes API load balancer above in three ways that matter:
+#
+#   * the VIP is public and must be supplied (var.ingress_load_balancer_vip);
+#     it cannot be derived from the node subnet the way the kube-api VIP is.
+#   * members are the worker node IPs explicitly, NOT a member_group_id. The
+#     kube-api pool uses an ip_set, and the consequence is visible in VCD: the
+#     /25 gets expanded into 128 pool members of which a handful are up, so the
+#     pool never reports UP and the health monitor is doing all the work. For an
+#     ingress path that is the difference between "7 members, 7 up, UP" and
+#     "128 members, 7 up, RUNNING". Explicit members track Terraform-managed
+#     workers exactly, and are reconciled by the same apply that adds or removes
+#     a node.
+#   * an active TCP health monitor on the NodePort, because the alternative is
+#     relying on passive monitoring alone -- which reacts only after client
+#     connections have already failed. zeta ran that way and lost roughly half
+#     its ingress capacity on every node reboot until 2026-08-12.
+locals {
+  ingress_load_balancer_enabled = var.ingress_load_balancer_enabled && var.ingress_load_balancer_vip != null
+  ingress_load_balancer_ports   = local.ingress_load_balancer_enabled ? var.ingress_load_balancer_ports : {}
+}
+
+resource "vcd_nsxt_alb_pool" "ingress" {
+  for_each = local.ingress_load_balancer_ports
+
+  edge_gateway_id = data.vcd_nsxt_edgegateway.this.id
+
+  # Set explicitly even though the provider block already carries it. `org` is
+  # Optional and ForceNew but NOT Computed, so an object adopted with
+  # `terraform import` -- whose ID is org.vdc.gateway.name -- lands in state with
+  # org populated while the config says null. Terraform reads that as a change to
+  # a ForceNew attribute and plans to destroy and recreate a live load balancer.
+  # Same pattern as image.tf.
+  org = data.vcd_org.this.name
+
+  name         = "${var.cluster_name}_worker_${each.value.node_port}"
+  algorithm    = "LEAST_CONNECTIONS"
+  default_port = each.value.node_port
+
+  # One second of grace for in-flight requests when a member is deliberately
+  # disabled. It does nothing for a node that has already died.
+  graceful_timeout_period = 1
+
+  # Both kinds of monitoring, deliberately. Passive reacts within about one
+  # failed client connection but only sees live traffic; active catches a member
+  # that is receiving none, and drives recovery back to UP after a reboot.
+  passive_monitoring_enabled = true
+
+  health_monitor {
+    type = "TCP"
+  }
+
+  dynamic "member" {
+    for_each = local.worker_private_ipv4_list
+    content {
+      ip_address = member.value
+      port       = each.value.node_port
+      ratio      = 1
+      enabled    = true
+    }
+  }
+}
+
+resource "vcd_nsxt_alb_virtual_service" "ingress" {
+  for_each = local.ingress_load_balancer_ports
+
+  edge_gateway_id = data.vcd_nsxt_edgegateway.this.id
+
+  # Set explicitly even though the provider block already carries it. `org` is
+  # Optional and ForceNew but NOT Computed, so an object adopted with
+  # `terraform import` -- whose ID is org.vdc.gateway.name -- lands in state with
+  # org populated while the config says null. Terraform reads that as a change to
+  # a ForceNew attribute and plans to destroy and recreate a live load balancer.
+  # Same pattern as image.tf.
+  org = data.vcd_org.this.name
+
+  name = "${var.cluster_name}_ingress_${each.key}"
+
+  virtual_ip_address = var.ingress_load_balancer_vip
+
+  service_engine_group_id = data.vcd_nsxt_alb_edgegateway_service_engine_group.kube_api.service_engine_group_id
+  pool_id                 = vcd_nsxt_alb_pool.ingress[each.key].id
+
+  # L4, not L7. The ingress controller runs with --enable-ssl-passthrough, so
+  # TLS must reach it intact; an HTTPS application profile would terminate at
+  # the ALB and break passthrough silently.
+  application_profile_type = "L4"
+
+  # end_port is deliberately not set. VCD reports a single-port service as
+  # end=start, but the provider reads an unset end_port back as 0, so writing it
+  # explicitly produces a permanent one-line diff. The kube_api virtual service
+  # above omits it for the same reason.
+  service_port {
+    start_port = each.value.external_port
+    type       = "TCP_PROXY"
+  }
+}

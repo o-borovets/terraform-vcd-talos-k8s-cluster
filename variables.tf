@@ -31,6 +31,28 @@ variable "cluster_access" {
   }
 }
 
+variable "kubeconfig_endpoint_mode" {
+  type        = string
+  default     = "auto"
+  description = "Controls which endpoint is written into the generated kubeconfig. Use explicit modes to separate user-facing kubeconfig access from the module's own transport path."
+
+  validation {
+    condition     = contains(["auto", "public_ip", "private_ip", "public_endpoint", "private_endpoint"], var.kubeconfig_endpoint_mode)
+    error_message = "The kubeconfig_endpoint_mode must be 'auto', 'public_ip', 'private_ip', 'public_endpoint', or 'private_endpoint'."
+  }
+}
+
+variable "talosconfig_endpoints_mode" {
+  type        = string
+  default     = "auto"
+  description = "Controls which control plane node addresses are written into the generated talosconfig. Talos recommends direct per-node IPs instead of a VIP or load-balanced hostname."
+
+  validation {
+    condition     = contains(["auto", "public_ip", "private_ip"], var.talosconfig_endpoints_mode)
+    error_message = "The talosconfig_endpoints_mode must be 'auto', 'public_ip', or 'private_ip'."
+  }
+}
+
 variable "cluster_kubeconfig_path" {
   type        = string
   default     = null
@@ -59,6 +81,30 @@ variable "cluster_delete_protection" {
   type        = bool
   default     = true
   description = "Adds delete protection for resources that support it."
+}
+
+# Client Tools
+variable "client_prerequisites_check_enabled" {
+  type        = bool
+  default     = true
+  description = "Controls whether a preflight check verifies that required client tools are installed before provisioning."
+}
+
+variable "talosctl_version_check_enabled" {
+  type        = bool
+  default     = true
+  description = "Controls whether a preflight check verifies the local talosctl client version before provisioning."
+}
+
+variable "talosctl_retries" {
+  type        = number
+  default     = 10
+  description = "Specifies how many times talosctl operations should retry before failing. This setting helps improve resilience against transient network issues or temporary API unavailability."
+
+  validation {
+    condition     = var.talosctl_retries >= 0
+    error_message = "The talosctl retries value must be at least 0."
+  }
 }
 
 
@@ -198,6 +244,11 @@ variable "control_plane_nodepools" {
     secure_boot = optional(bool, false)
 
     extra_parameters = optional(map(string), {})
+
+    internal_disks = optional(list(object({
+      type       = string
+      size_in_mb = number
+    })), [])
   }))
   description = "Configures the number and attributes of Control Plane nodes."
 
@@ -260,6 +311,11 @@ variable "worker_nodepools" {
     secure_boot = optional(bool, false)
 
     extra_parameters = optional(map(string), {})
+
+    internal_disks = optional(list(object({
+      type       = string
+      size_in_mb = number
+    })), [])
   }))
   default     = []
   description = "Defines configuration settings for Worker node pools within the cluster."
@@ -311,7 +367,7 @@ variable "worker_config_patches" {
 # Talos
 variable "talos_version" {
   type        = string
-  default     = "v1.8.4"
+  default     = "v1.12.6"
   description = "Specifies the version of Talos to be used in generated machine configurations."
 }
 
@@ -325,6 +381,113 @@ variable "talos_image_extensions" {
   type        = list(string)
   default     = []
   description = "Specifies Talos image extensions for additional functionality on top of the default Talos Linux capabilities. See: https://github.com/siderolabs/extensions"
+}
+
+variable "talos_upgrade_debug" {
+  type        = bool
+  default     = false
+  description = "Enable debug operation from kernel logs during Talos upgrades. When true, --wait is set to true by talosctl."
+}
+
+variable "talos_upgrade_force" {
+  type        = bool
+  default     = false
+  description = "Force the Talos upgrade by skipping etcd health and member checks."
+}
+
+variable "talos_upgrade_insecure" {
+  type        = bool
+  default     = false
+  description = "Upgrade using the insecure (no auth) maintenance service."
+}
+
+variable "talos_upgrade_reboot_mode" {
+  type        = string
+  default     = null
+  description = "Select the reboot mode during upgrade. Mode \"powercycle\" bypasses kexec. Valid values: \"default\" or \"powercycle\"."
+
+  validation {
+    condition     = var.talos_upgrade_reboot_mode == null ? true : contains(["default", "powercycle"], var.talos_upgrade_reboot_mode)
+    error_message = "The talos_upgrade_reboot_mode must be \"default\" or \"powercycle\"."
+  }
+}
+
+variable "talos_upgrade_stage" {
+  type        = bool
+  default     = false
+  description = "Stage the Talos upgrade to perform it after a reboot. Legacy upgrade path only, see talos_upgrade_legacy."
+}
+
+variable "talos_upgrade_preserve" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Preserve the contents of the EPHEMERAL partition (/var) across a Talos upgrade,
+    rather than wiping it and letting the node rebuild from scratch.
+
+    This matters most on control planes, where /var/lib/etcd lives: with preserve
+    disabled, every upgraded control plane discards its etcd data and re-syncs from
+    the surviving quorum members, so each node upgrade spends time at reduced
+    redundancy. On workers it decides whether the container image cache and
+    /var/lib/kubelet survive, i.e. whether every image is pulled again afterwards.
+
+    Legacy upgrade path only, see talos_upgrade_legacy. Disable it deliberately when
+    a node needs a clean ephemeral partition, for example to clear corrupted local
+    state, and prefer doing that one node at a time rather than for a whole walk.
+  EOT
+}
+
+variable "talos_upgrade_legacy" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Force talosctl to use the legacy MachineService.Upgrade path instead of letting
+    it choose. Leave false to let talosctl decide: it uses the newer
+    LifecycleService.Upgrade API when the node already runs Talos >1.13.0-alpha.2
+    and falls back to the legacy path otherwise.
+
+    The choice is not cosmetic. talos_upgrade_preserve, talos_upgrade_force and
+    talos_upgrade_stage are honoured only on the legacy path; the new path silently
+    ignores them, and instead drains the node (cordon and evict) before rebooting.
+    Set this to true when those flags must apply deterministically across a version
+    walk that will cross 1.13 partway through. talosctl marks the legacy path
+    deprecated, for removal in Talos 1.18.
+  EOT
+}
+
+variable "talos_reboot_debug" {
+  type        = bool
+  default     = false
+  description = "Enable debug operation from kernel logs during Talos reboots. When true, --wait is set to true by talosctl."
+}
+
+variable "talos_reboot_mode" {
+  type        = string
+  default     = null
+  description = "Select the reboot mode. Mode \"powercycle\" bypasses kexec, and mode \"force\" skips graceful teardown. Valid values: \"default\", \"powercycle\", or \"force\"."
+
+  validation {
+    condition     = var.talos_reboot_mode == null ? true : contains(["default", "powercycle", "force"], var.talos_reboot_mode)
+    error_message = "The talos_reboot_mode must be \"default\", \"powercycle\", or \"force\"."
+  }
+}
+
+variable "talos_staged_configuration_automatic_reboot_enabled" {
+  type        = bool
+  default     = true
+  description = "Determines whether nodes are rebooted automatically after Talos machine configuration changes are applied in 'staged' mode, or when 'staged_if_needing_reboot' resolves to 'staged' mode. Without this, a staged configuration sits pending until something else reboots the node."
+}
+
+variable "talos_discovery_kubernetes_enabled" {
+  type        = bool
+  default     = false
+  description = "Enable or disable Kubernetes-based Talos discovery service. Deprecated as of Kubernetes v1.32, where the AuthorizeNodeWithSelectors feature gate is enabled by default."
+}
+
+variable "talos_discovery_service_enabled" {
+  type        = bool
+  default     = true
+  description = "Enable or disable Sidero Labs public Talos discovery service."
 }
 
 variable "talos_kubelet_extra_mounts" {
@@ -365,11 +528,11 @@ variable "talos_kernel_modules" {
 variable "talos_machine_configuration_apply_mode" {
   type        = string
   default     = "auto"
-  description = "Determines how changes to Talos machine configurations are applied. 'auto' (default) applies changes immediately and reboots if necessary. 'reboot' applies changes and then reboots the node. 'no_reboot' applies changes immediately without a reboot, failing if a reboot is required. 'staged' stages changes to apply on the next reboot without initiating a reboot."
+  description = "Determines how changes to Talos machine configurations are applied. 'auto' applies changes immediately and reboots if necessary. 'reboot' applies changes and then reboots the node. 'no_reboot' applies changes immediately without a reboot, failing if a reboot is required. 'staged' stages changes for the next reboot. 'staged_if_needing_reboot' applies immediately when safe and stages only when a reboot is required."
 
   validation {
-    condition     = contains(["auto", "reboot", "no_reboot", "staged"], var.talos_machine_configuration_apply_mode)
-    error_message = "The talos_machine_configuration_apply_mode must be 'auto', 'reboot', 'no_reboot', or 'staged'."
+    condition     = contains(["auto", "reboot", "no_reboot", "staged", "staged_if_needing_reboot"], var.talos_machine_configuration_apply_mode)
+    error_message = "The talos_machine_configuration_apply_mode must be 'auto', 'reboot', 'no_reboot', 'staged', or 'staged_if_needing_reboot'."
   }
 }
 
@@ -488,7 +651,7 @@ variable "talos_service_log_destinations" {
 # Kubernetes
 variable "kubernetes_version" {
   type        = string
-  default     = "v1.31.4"
+  default     = "v1.35.2" # https://github.com/kubernetes/kubernetes
   description = "Specifies the Kubernetes version to deploy."
 }
 
@@ -504,12 +667,73 @@ variable "kubernetes_kubelet_extra_config" {
   description = "Specifies additional configuration settings for the kubelet service. These settings can customize or override default kubelet configurations, allowing for tailored cluster behavior."
 }
 
+variable "kubernetes_apiserver_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kube-apiserver (e.g., 'my-registry.io/kube-apiserver'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_apiserver_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_apiserver_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kube-apiserver'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
+variable "kubernetes_controller_manager_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kube-controller-manager (e.g., 'my-registry.io/kube-controller-manager'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_controller_manager_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_controller_manager_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kube-controller-manager'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
+variable "kubernetes_scheduler_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kube-scheduler (e.g., 'my-registry.io/kube-scheduler'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_scheduler_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_scheduler_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kube-scheduler'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
+variable "kubernetes_proxy_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kube-proxy (e.g., 'my-registry.io/kube-proxy'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_proxy_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_proxy_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kube-proxy'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
+variable "kubernetes_kubelet_image" {
+  type        = string
+  default     = null
+  description = "Specifies a custom image repository for kubelet (e.g., 'my-registry.io/kubelet'). The version tag is appended automatically from kubernetes_version. When set, this image is used during both machine configuration and Kubernetes upgrades, preventing custom images from being reset to upstream defaults."
+
+  validation {
+    condition     = var.kubernetes_kubelet_image == null || can(regex("^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$", var.kubernetes_kubelet_image))
+    error_message = "The image must be a valid container image reference without a tag (e.g., 'my-registry.io/kubelet'). The version tag is appended automatically from kubernetes_version."
+  }
+}
+
 
 # Kubernetes API
 variable "kube_api_hostname" {
   type        = string
   default     = null
-  description = "Specifies the hostname for external access to the Kubernetes API server. This must be a valid domain name, set to the API's public IP address."
+  description = "Optional public DNS hostname for the Kubernetes API. Use this with kubeconfig_endpoint_mode='public_endpoint' when kubeconfig should point at a stable public DNS or load balancer address."
+}
+
+variable "kube_api_private_hostname" {
+  type        = string
+  default     = null
+  description = "Optional private DNS hostname for the Kubernetes API. Use this with kubeconfig_endpoint_mode='private_endpoint' when kubeconfig should point at a private VIP or split-horizon DNS name."
 }
 
 variable "kube_api_load_balancer_enabled" {
@@ -524,6 +748,30 @@ variable "kube_api_load_balancer_public_network_enabled" {
   description = "Enables the public interface for the Kubernetes API load balancer. When enabled, the API is accessible publicly without a firewall."
 }
 
+variable "ingress_load_balancer_enabled" {
+  type        = bool
+  default     = true
+  description = "Determines whether an NSX-ALB load balancer is created in front of the cluster's ingress controller NodePorts. On by default, but inert until ingress_load_balancer_vip is set, so an existing cluster is unaffected until it opts in by supplying a VIP."
+}
+
+variable "ingress_load_balancer_vip" {
+  type        = string
+  default     = null
+  description = "Public IPv4 address to expose the ingress controller on. Must already be allocated to the edge gateway. Unlike the Kubernetes API load balancer, this VIP cannot be derived from the node subnet -- it is a public address, so it has to be supplied explicitly. Leaving it null disables the ingress load balancer regardless of ingress_load_balancer_enabled."
+}
+
+variable "ingress_load_balancer_ports" {
+  type = map(object({
+    external_port = number
+    node_port     = number
+  }))
+  default = {
+    http  = { external_port = 80, node_port = 30080 }
+    https = { external_port = 443, node_port = 30443 }
+  }
+  description = "Ports published by the ingress load balancer. The map key names the virtual service (<cluster>_ingress_<key>); node_port must match the NodePort the ingress controller Service is pinned to, and each entry gets its own pool named <cluster>_worker_<node_port>."
+}
+
 variable "kube_api_extra_args" {
   type        = map(string)
   default     = {}
@@ -534,8 +782,60 @@ variable "kube_api_extra_args" {
 # Talos CCM
 variable "talos_ccm_version" {
   type        = string
-  default     = "v1.9.0" # https://github.com/siderolabs/talos-cloud-controller-manager
-  description = "Specifies the version of the Talos Cloud Controller Manager (CCM) to use. This version controls cloud-specific integration features in the Talos operating system."
+  default     = "v1.12.0" # https://github.com/siderolabs/talos-cloud-controller-manager
+  description = "Specifies the version of the Talos Cloud Controller Manager (CCM) to use. This version controls cloud-specific integration features in the Talos operating system. The manifest in talos_ccm.tf is a snapshot of the v1.9.0 bundle shape; re-vendor it when changing this, because later releases change more than the image tag."
+}
+
+variable "talos_ccm_image" {
+  type        = string
+  default     = "ghcr.io/siderolabs/talos-cloud-controller-manager"
+  description = "Container image repository for the Talos CCM, without a tag. Override to pull from a mirror."
+}
+
+variable "talos_ccm_controllers" {
+  type        = list(string)
+  default     = ["node-csr-approval"]
+  description = <<-EOT
+    Controllers the Talos CCM should run, passed through as --controllers.
+
+    The default is deliberately narrower than upstream's
+    ["cloud-node", "node-csr-approval"]. This module always deploys alongside the
+    VMware Cloud Director CCM, which runs its own cloud-node and cloud-node-lifecycle;
+    running cloud-node in both makes node initialisation a race whose winner sets the
+    node's providerID, and the schemes are not interchangeable. node-csr-approval has
+    no counterpart in the VCD CCM or in kube-controller-manager — which auto-approves
+    only kubernetes.io/kube-apiserver-client-kubelet, never kubernetes.io/kubelet-serving
+    — so it must stay with the Talos CCM.
+
+    Do not use "*": upstream intends cloud-node-lifecycle to be disabled by default but
+    registers the wrong constant for it, so the wildcard enables it and it fights the
+    VCD CCM. An explicit list is unaffected by that bug.
+  EOT
+
+  validation {
+    condition     = length(var.talos_ccm_controllers) > 0
+    error_message = "The talos_ccm_controllers list must not be empty."
+  }
+
+  validation {
+    condition = alltrue([
+      for c in var.talos_ccm_controllers : contains([
+        "cloud-node", "cloud-node-controller",
+        "cloud-node-lifecycle", "cloud-node-lifecycle-controller",
+        "route", "node-route-controller",
+        "service", "service-lb-controller",
+        "nodeipam", "node-ipam-controller",
+        "node-csr-approval", "certificatesigningrequest-approving-controller",
+      ], c)
+    ])
+    error_message = "Each entry in talos_ccm_controllers must be a controller name or alias recognised by the Talos CCM."
+  }
+}
+
+variable "talos_ccm_secure_port" {
+  type        = number
+  default     = 50258
+  description = "Port the Talos CCM serves metrics and health endpoints on. Upstream changed this from 50258 to 10458 in v1.13.0; changing it on a live cluster can deadlock the manifest sync, because the Service port list merges under server-side apply by (port, protocol) and the stale entry is co-owned by the CCM's own field manager. If that happens, delete the Service and DaemonSet in kube-system while the apply is still retrying."
 }
 
 variable "hcloud_network" {
