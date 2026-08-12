@@ -449,10 +449,17 @@ data "talos_machine_configuration" "control_plane" {
   kubernetes_version = var.kubernetes_version
   machine_type       = "controlplane"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
-  config_patches = [
-    yamlencode(local.control_plane_talos_config_patch[each.key]),
-    yamlencode(var.control_plane_config_patches)
-  ]
+  # Each user patch is encoded as its OWN document. Encoding the whole list in
+  # one yamlencode() produced a YAML sequence, which Talos reads as an RFC 6902
+  # JSON patch — and since Talos 1.12 the generated machine configuration is
+  # multi-document (v1alpha1 + HostnameConfig), where JSON patches are rejected
+  # outright: "JSON6902 patches are not supported for multi-document machine
+  # configuration". Per-element encoding lets a map element be a strategic merge
+  # patch, which works on multi-document configs.
+  config_patches = concat(
+    [yamlencode(local.control_plane_talos_config_patch[each.key])],
+    [for patch in var.control_plane_config_patches : yamlencode(patch)]
+  )
   docs     = false
   examples = false
 }
@@ -466,10 +473,11 @@ data "talos_machine_configuration" "worker" {
   kubernetes_version = var.kubernetes_version
   machine_type       = "worker"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
-  config_patches = [
-    yamlencode(local.worker_talos_config_patch[each.key]),
-    yamlencode(var.worker_config_patches)
-  ]
+  # Per-element encoding — see the note on the control plane data source above.
+  config_patches = concat(
+    [yamlencode(local.worker_talos_config_patch[each.key])],
+    [for patch in var.worker_config_patches : yamlencode(patch)]
+  )
   docs     = false
   examples = false
 }

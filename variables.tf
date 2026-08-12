@@ -294,7 +294,24 @@ variable "control_plane_nodepools" {
 variable "control_plane_config_patches" {
   type        = list(any)
   default     = []
-  description = "List of configuration patches applied to the Control Plane nodes."
+  description = <<-EOT
+    Configuration patches applied to the Control Plane nodes. Each element is
+    passed to Talos as its own patch, in order.
+
+    Prefer a map per element - it becomes a strategic merge patch, which is the
+    only form Talos accepts against a multi-document machine configuration, and
+    the generated configuration is multi-document from Talos 1.12 onwards.
+    Within a strategic merge patch, maps merge recursively and lists are
+    replaced wholesale, so state a list-valued field in full.
+
+    An element may still be a list of RFC 6902 operations, but Talos rejects
+    those on 1.12+ with "JSON6902 patches are not supported for multi-document
+    machine configuration".
+
+    BREAKING since v0.4.0: elements used to be encoded together as a single YAML
+    sequence, i.e. the whole variable was one RFC 6902 patch. Callers passing
+    bare {op, path, value} elements must convert them to strategic merge maps.
+  EOT
 }
 
 
@@ -360,7 +377,11 @@ variable "worker_nodepools" {
 variable "worker_config_patches" {
   type        = list(any)
   default     = []
-  description = "List of configuration patches applied to the Worker nodes."
+  description = <<-EOT
+    Configuration patches applied to the Worker nodes. Each element is passed to
+    Talos as its own patch, in order. Same rules and same v0.4.0 breaking change
+    as control_plane_config_patches - see that variable.
+  EOT
 }
 
 
