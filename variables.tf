@@ -748,6 +748,30 @@ variable "kube_api_load_balancer_public_network_enabled" {
   description = "Enables the public interface for the Kubernetes API load balancer. When enabled, the API is accessible publicly without a firewall."
 }
 
+variable "ingress_load_balancer_enabled" {
+  type        = bool
+  default     = true
+  description = "Determines whether an NSX-ALB load balancer is created in front of the cluster's ingress controller NodePorts. On by default, but inert until ingress_load_balancer_vip is set, so an existing cluster is unaffected until it opts in by supplying a VIP."
+}
+
+variable "ingress_load_balancer_vip" {
+  type        = string
+  default     = null
+  description = "Public IPv4 address to expose the ingress controller on. Must already be allocated to the edge gateway. Unlike the Kubernetes API load balancer, this VIP cannot be derived from the node subnet -- it is a public address, so it has to be supplied explicitly. Leaving it null disables the ingress load balancer regardless of ingress_load_balancer_enabled."
+}
+
+variable "ingress_load_balancer_ports" {
+  type = map(object({
+    external_port = number
+    node_port     = number
+  }))
+  default = {
+    http  = { external_port = 80, node_port = 30080 }
+    https = { external_port = 443, node_port = 30443 }
+  }
+  description = "Ports published by the ingress load balancer. The map key names the virtual service (<cluster>_ingress_<key>); node_port must match the NodePort the ingress controller Service is pinned to, and each entry gets its own pool named <cluster>_worker_<node_port>."
+}
+
 variable "kube_api_extra_args" {
   type        = map(string)
   default     = {}
