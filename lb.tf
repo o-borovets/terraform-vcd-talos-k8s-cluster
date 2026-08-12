@@ -85,6 +85,14 @@ resource "vcd_nsxt_alb_pool" "ingress" {
 
   edge_gateway_id = data.vcd_nsxt_edgegateway.this.id
 
+  # Set explicitly even though the provider block already carries it. `org` is
+  # Optional and ForceNew but NOT Computed, so an object adopted with
+  # `terraform import` -- whose ID is org.vdc.gateway.name -- lands in state with
+  # org populated while the config says null. Terraform reads that as a change to
+  # a ForceNew attribute and plans to destroy and recreate a live load balancer.
+  # Same pattern as image.tf.
+  org = data.vcd_org.this.name
+
   name         = "${var.cluster_name}_worker_${each.value.node_port}"
   algorithm    = "LEAST_CONNECTIONS"
   default_port = each.value.node_port
@@ -118,6 +126,14 @@ resource "vcd_nsxt_alb_virtual_service" "ingress" {
 
   edge_gateway_id = data.vcd_nsxt_edgegateway.this.id
 
+  # Set explicitly even though the provider block already carries it. `org` is
+  # Optional and ForceNew but NOT Computed, so an object adopted with
+  # `terraform import` -- whose ID is org.vdc.gateway.name -- lands in state with
+  # org populated while the config says null. Terraform reads that as a change to
+  # a ForceNew attribute and plans to destroy and recreate a live load balancer.
+  # Same pattern as image.tf.
+  org = data.vcd_org.this.name
+
   name = "${var.cluster_name}_ingress_${each.key}"
 
   virtual_ip_address = var.ingress_load_balancer_vip
@@ -130,9 +146,12 @@ resource "vcd_nsxt_alb_virtual_service" "ingress" {
   # the ALB and break passthrough silently.
   application_profile_type = "L4"
 
+  # end_port is deliberately not set. VCD reports a single-port service as
+  # end=start, but the provider reads an unset end_port back as 0, so writing it
+  # explicitly produces a permanent one-line diff. The kube_api virtual service
+  # above omits it for the same reason.
   service_port {
     start_port = each.value.external_port
-    end_port   = each.value.external_port
     type       = "TCP_PROXY"
   }
 }
