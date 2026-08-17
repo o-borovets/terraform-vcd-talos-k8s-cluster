@@ -363,6 +363,29 @@ resource "talos_machine_bootstrap" "this" {
   endpoint             = local.talos_transport_primary_endpoint
   node                 = local.talos_primary_node_private_ipv4
 
+  # Bootstrapping happens once in a cluster's life. WHICH node it happened on is
+  # history, so this resource must not track it.
+  #
+  # Both attributes derive from `local.talos_primary_node_name`, which is
+  # `sort(keys(vcd_vapp_vm.control_plane))[0]` -- so any change to the set of
+  # control-plane node NAMES can move them. Replacing a control-plane nodepool is
+  # the ordinary case: add a second pool, then remove the first, and the moment the
+  # original lowest-sorting node is destroyed the primary moves to a node in the new
+  # pool. `node` is Required and the provider has no Update, so that plans as a
+  # destroy-and-create of this resource -- on the very apply that is tearing the old
+  # control plane down.
+  #
+  # Nothing good can come of that. `talosctl bootstrap` against a cluster whose etcd
+  # is already initialised errors out, so the realistic outcome is a failed apply
+  # mid-teardown rather than data loss -- but the resource then sits absent from
+  # state and every subsequent plan retries it, which wedges the root.
+  lifecycle {
+    ignore_changes = [
+      node,
+      endpoint,
+    ]
+  }
+
   depends_on = [
     talos_machine_configuration_apply.control_plane,
     talos_machine_configuration_apply.worker
