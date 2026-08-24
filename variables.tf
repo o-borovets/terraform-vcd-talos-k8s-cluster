@@ -404,6 +404,17 @@ variable "talos_image_extensions" {
   description = "Specifies Talos image extensions for additional functionality on top of the default Talos Linux capabilities. See: https://github.com/siderolabs/extensions"
 }
 
+variable "talos_ova_sha256" {
+  type        = string
+  default     = null
+  description = "Optional SHA-256 of the Talos VMware OVA, as 64 lowercase hex characters. When set, the download is rejected unless it matches, and the value takes part in the catalog item's replacement trigger. The Talos image factory serves no checksum on the free tier, so pin this from a known-good download."
+
+  validation {
+    condition     = var.talos_ova_sha256 == null || can(regex("^[0-9a-f]{64}$", var.talos_ova_sha256))
+    error_message = "talos_ova_sha256 must be 64 lowercase hexadecimal characters."
+  }
+}
+
 variable "talos_upgrade_debug" {
   type        = bool
   default     = false

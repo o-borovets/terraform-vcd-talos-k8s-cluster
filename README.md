@@ -63,6 +63,38 @@ module "vcd-cluster" {
 </details>
 
 
+<details>
+<summary><b>Pinning the Talos boot image</b></summary>
+
+The module downloads the Talos VMware OVA from the image factory and uploads it as a
+catalog item named `talos-<version>-<fingerprint>`, where the fingerprint is derived from
+the schematic id, the Talos version, the platform and the architecture. The catalog item is
+replaced, not renamed, whenever that fingerprint changes.
+
+This matters because `vcd_catalog_item.name` is not `ForceNew`, and the provider's update
+path only writes the new name onto the vApp template that is already in the catalog — it
+never re-uploads the OVA. A catalog item keyed on a bare version string can therefore hold
+any image at all while `terraform plan` reports no changes.
+
+The image factory serves no checksum on the free tier, so the module cannot verify the
+download against upstream on its own. It always checks that the file is a real OVA — large
+enough, and a tar whose first member is the `.ovf` descriptor — which is what catches the
+HTML redirect page that a download without `--location` produces. To assert the exact bytes
+as well, pin them:
+
+```hcl
+module "vcd-cluster" {
+  talos_version    = "v1.13.8"
+  talos_ova_sha256 = "984843fad655d9284820fb7890f640accb44de73a9c1bbc3e707b8be218eab11"
+}
+```
+
+Setting or changing `talos_ova_sha256` forces one re-download and one re-upload. Each
+verified download leaves a `<ova>.sha256` sidecar next to the OVA in the root module
+directory, which is where the value to pin comes from.
+
+</details>
+
 ## Roadmap
 - [] Setup Renovate for dependency updates
 - [] Support cluster creation without an existing edge gateway
